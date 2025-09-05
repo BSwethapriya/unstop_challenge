@@ -3,7 +3,6 @@ import pandas as pd
 import re
 from datetime import datetime
 import matplotlib.pyplot as plt
-import io
 
 st.set_page_config(page_title="AI Support Assistant", layout="wide")
 
@@ -92,45 +91,33 @@ def response_template(row: pd.Series) -> str:
     name = sender.split("@")[0].split(".")[0].title() if isinstance(sender, str) else "there"
     is_urgent = row.get("priority") == "Urgent"
     senti = row.get("sentiment", "Neutral")
-    issue = str(row.get("issue_type", "other")).replace("_", " ")
 
     opening = f"Hi {name},"
     empathy = ""
     if is_urgent or senti in ["Negative", "Mixed"]:
         empathy = " I’m sorry for the trouble you’re facing—we understand how disruptive this can be and we’re on it."
 
-    # Tailored summary/next steps per issue type
     it = row.get("issue_type")
     if it == "login_issue":
-        summary = ("From your message, it looks like you’re unable to access your account. "
-                   "Here’s what we’ll do right away: check your account status, recent auth logs, and reset rate limits. "
-                   "Could you confirm the email/username you use to log in and any error screenshot you see?")
+        summary = "From your message, it looks like you’re unable to access your account. Please confirm your email/username."
     elif it == "password_reset":
-        summary = ("You mentioned password reset issues. We’ll verify the reset token validity and email deliverability. "
-                   "Please share the time you attempted the reset and confirm if the email reached spam.")
+        summary = "You mentioned password reset issues. We’ll verify the reset token validity and email deliverability."
     elif it == "billing_error":
-        summary = ("You flagged a billing concern. We’ll audit your last invoice and payment events. "
-                   "Please share the invoice number or last four digits of the transaction and the charge date.")
+        summary = "You flagged a billing concern. We’ll audit your last invoice and payment events."
     elif it == "downtime":
-        summary = ("You reported a service outage. We’re checking system health and incident logs. "
-                   "If possible, share affected endpoints, approximate start time, and any error IDs.")
+        summary = "You reported a service outage. We’re checking system health and incident logs."
     elif it == "integration_api":
-        summary = ("Regarding API/CRM integration, we support standard OAuth and webhook flows. "
-                   "Could you clarify which CRM (e.g., Salesforce, HubSpot) and the use case (sync contacts, deals, etc.)?")
+        summary = "Regarding API/CRM integration, we support standard OAuth and webhook flows."
     elif it == "pricing":
-        summary = ("You asked about pricing tiers. I’ll send a breakdown of plans, feature limits, and overage policies. "
-                   "Do you have expected monthly volumes or specific features in mind?")
+        summary = "You asked about pricing tiers. I’ll send a breakdown of plans and features."
     elif it == "account_verification":
-        summary = ("You’re facing account verification issues. We’ll re-trigger the verification email and verify deliverability. "
-                   "Please confirm your registered email and check spam/junk folders.")
+        summary = "You’re facing account verification issues. We’ll re-trigger the verification email."
     elif it == "subscription":
-        summary = ("On subscription queries, happy to help with plan changes, renewals, or cancellations. "
-                   "Let me know your current plan and the change you’re looking for.")
+        summary = "On subscription queries, happy to help with plan changes, renewals, or cancellations."
     elif it == "general_query":
-        summary = ("Thanks for your general query. Could you share a bit more context so we can guide you accurately?")
+        summary = "Thanks for your general query. Could you share a bit more context?"
     else:
-        summary = ("Thanks for reaching out. I’d love a bit more detail (what you tried, any errors, and expected outcome) "
-                   "so I can assist quickly.")
+        summary = "Thanks for reaching out. Could you share more detail so I can assist quickly?"
 
     sla = "We’ve prioritized your case and will update you shortly." if is_urgent else "We’ll review and get back to you soon."
     closing = "Best regards,\nSupport Team"
@@ -144,10 +131,10 @@ def response_template(row: pd.Series) -> str:
     )
     return body
 
+
 # ---------- Load data ----------
 @st.cache_data
 def load_data():
-    # Prefer enriched CSV if present, else raw and enrich on the fly
     try:
         df = pd.read_csv("enriched_emails.csv")
         if "sent_dt" in df.columns:
@@ -174,9 +161,10 @@ def load_data():
     df["draft_response"] = df.apply(response_template, axis=1)
     return df
 
+
 with st.sidebar:
     st.title("Controls")
-    uploaded = st.file_uploader("Upload support emails CSV", type=["csv"]) 
+    uploaded = st.file_uploader("Upload support emails CSV", type=["csv"])
     df = None
     if uploaded is not None:
         df = pd.read_csv(uploaded)
@@ -205,13 +193,13 @@ with st.sidebar:
 
     search = st.text_input("Search (subject/body)")
 
+
 st.title("AI-Powered Communication Assistant")
 
 if df is None or df.empty:
     st.info("Upload a CSV to get started.")
     st.stop()
 
-# Filters
 mask = pd.Series([True] * len(df))
 if sentiment_filter != "All":
     mask &= (df["sentiment"] == sentiment_filter)
@@ -224,8 +212,6 @@ if search:
     mask &= (df["subject"].str.lower().str.contains(s) | df["body"].str.lower().str.contains(s))
 
 view = df[mask].copy()
-
-# Priority ordering: eligible first, then priority score, then date
 view = view.sort_values(by=["eligible", "priority_score", "sent_dt"], ascending=[False, True, True])
 
 # --------- Analytics ---------
@@ -238,43 +224,62 @@ col4.metric("Urgent", int((df["priority"] == "Urgent").sum()))
 
 st.markdown("---")
 
-# Charts using matplotlib (no specific colors)
+# --------- Charts with safe checks ---------
 colA, colB, colC = st.columns(3)
+
 with colA:
     st.subheader("Issue Types")
     counts = view["issue_type"].value_counts()
-    fig, ax = plt.subplots()
-    counts.plot(kind="bar", ax=ax, rot=30)
-    ax.set_xlabel("Type")
-    ax.set_ylabel("Count")
-    st.pyplot(fig)
+    if not counts.empty:
+        fig, ax = plt.subplots()
+        counts.plot(kind="bar", ax=ax, rot=30)
+        ax.set_xlabel("Type")
+        ax.set_ylabel("Count")
+        st.pyplot(fig)
+    else:
+        st.warning("⚠️ No such combinations exist for Issue Types")
+
 with colB:
     st.subheader("Sentiment")
     counts = view["sentiment"].value_counts()
-    fig, ax = plt.subplots()
-    counts.plot(kind="bar", ax=ax, rot=0)
-    ax.set_xlabel("Sentiment")
-    ax.set_ylabel("Count")
-    st.pyplot(fig)
+    if not counts.empty:
+        fig, ax = plt.subplots()
+        counts.plot(kind="bar", ax=ax, rot=0)
+        ax.set_xlabel("Sentiment")
+        ax.set_ylabel("Count")
+        st.pyplot(fig)
+    else:
+        st.warning("⚠️ No such combinations exist for Sentiment")
+
 with colC:
     st.subheader("Priority")
     counts = view["priority"].value_counts()
-    fig, ax = plt.subplots()
-    counts.plot(kind="bar", ax=ax, rot=0)
-    ax.set_xlabel("Priority")
-    ax.set_ylabel("Count")
-    st.pyplot(fig)
+    if not counts.empty:
+        fig, ax = plt.subplots()
+        counts.plot(kind="bar", ax=ax, rot=0)
+        ax.set_xlabel("Priority")
+        ax.set_ylabel("Count")
+        st.pyplot(fig)
+    else:
+        st.warning("⚠️ No such combinations exist for Priority")
 
 st.markdown("---")
 
 # --------- Table ---------
 st.subheader("Filtered Support Emails")
-st.dataframe(view[["sender","subject","issue_type","sentiment","priority","sent_dt"]], use_container_width=True)
+if not view.empty:
+    st.dataframe(view[["sender", "subject", "issue_type", "sentiment", "priority", "sent_dt"]], use_container_width=True)
+else:
+    st.warning("⚠️ No such combinations exist for the current filter selection.")
 
 # --------- Email detail + AI response editor ---------
 st.subheader("Process Email")
-if len(view) > 0:
-    idx = st.selectbox("Select an email to draft a response:", view.index.tolist(), format_func=lambda i: f"{view.loc[i,'sender']} — {view.loc[i,'subject']}")
+if not view.empty:
+    idx = st.selectbox(
+        "Select an email to draft a response:",
+        view.index.tolist(),
+        format_func=lambda i: f"{view.loc[i,'sender']} — {view.loc[i,'subject']}"
+    )
     row = view.loc[idx]
     st.write("**Body:**")
     st.write(row["body"])
@@ -292,14 +297,14 @@ if len(view) > 0:
     draft = row.get("draft_response") or response_template(row)
     edited = st.text_area("AI-generated draft (editable before sending)", draft, height=300)
 
-    colx, coly = st.columns([1,1])
+    colx, coly = st.columns([1, 1])
     if colx.button("Copy to clipboard (browser)"):
         st.info("Use your browser's copy shortcut inside the text area.")
     if coly.button("Mark as resolved"):
         st.success("Marked as resolved (simulation)")
 else:
-    st.info("No emails match the current filters.")
+    st.warning("⚠️ No such combinations exist for the current filter selection.")
 
-# Footer
 st.markdown("---")
 st.caption("Demo app — rule-based classification + templated drafts. Replace with your LLM + RAG pipeline in production.")
+
